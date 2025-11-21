@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS2 Case Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <audio id="sfx-tension" src="https://sounds-mp3.com/mp3/0012667.mp3"></audio>
+    <audio id="sfx-drop" src="https://cdns-preview-f.dzcdn.net/stream/c-fe252277d121c6077759a22f3ed059a4-4.mp3"></audio>
+    <audio id="sfx-spin" src="https://assets.mixkit.co/sfx/preview/mixkit-game-ball-tap-2073.mp3"></audio>
+    <audio id="sfx-win" src="https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3"></audio>
+    <audio id="sfx-start" src="https://assets.mixkit.co/sfx/preview/mixkit-ui-click-2523.mp3"></audio>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Inter:wght@400;800&display=swap');
+
+        body {
+            background-color: #1b1b1b;
+            color: white;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f0f0f;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+
+        /* The Case Spinner Window (Height is now often set dynamically for multi-open) */
+        .case-window {
+            position: relative;
+            width: 100%;
+            max-width: 1000px;
+            background: linear-gradient(to bottom, #0a0a0a, #1a1a1a);
+            border-top: 2px solid #333;
+            border-bottom: 2px solid #333;
+            overflow: hidden;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
+            margin: 0 auto;
+        }
+
+        /* The Yellow Center Line */
+        .center-line {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: #fbbf24; /* Amber 400 */
+            z-index: 20;
+            transform: translateX(-50%);
+            box-shadow: 0 0 10px #fbbf24;
+        }
+
+        .center-line::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -6px;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 10px solid #fbbf24;
+        }
+        
+        .center-line::before {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: -6px;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 10px solid #fbbf24;
+        }
+
+        /* The Strip of Weapons */
+        .reel {
+            display: flex;
+            align-items: center;
+            position: absolute;
+            left: 0; 
+            will-change: transform;
+            height: 100%; 
+        }
+
+        /* Weapon Card */
+        .weapon-card {
+            width: 180px;
+            height: 140px; 
+            margin: 0 4px;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #252525, #1e1e1e);
+            border-bottom: 6px solid;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); 
+        }
+        
+        .weapon-card img {
+            width: 85%;
+            height: auto;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5));
+            transition: transform 0.2s;
+        }
+
+        /* Button Styles */
+        .btn-action {
+            font-family: 'Rajdhani', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+            transition: all 0.1s;
+        }
+        .btn-action:active {
+            transform: scale(0.98);
+        }
+
+        /* Inventory Item */
+        .inv-item {
+            background: rgba(255,255,255,0.05);
+            transition: all 0.2s;
+        }
+        .inv-item:hover {
+            background: rgba(255,255,255,0.1);
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <header class="p-6 flex justify-between items-center bg-black/50 border-b border-gray-800 backdrop-blur-md sticky top-0 z-30">
+        <div class="flex items-center gap-3">
+            <i class="fas fa-box-open text-yellow-500 text-2xl"></i>
+            <h1 class="text-2xl font-bold tracking-tighter font-rajdhani">CS2 SIMULATOR <span class="text-xs text-gray-500 ml-2 font-mono" id="connectionStatus">LOCAL JSON</span></h1>
+        </div>
+        <div class="flex items-center gap-6">
+            
+            <div class="text-right">
+                <div class="text-xs text-gray-400 uppercase tracking-widest">Cases Opened</div>
+                <div class="text-xl font-bold text-blue-400 font-mono" id="casesOpenedCount">0</div>
+            </div>
+
+            <button id="soundToggle" onclick="toggleSound()" class="text-gray-400 hover:text-white transition-colors">
+                <i class="fas fa-volume-up text-xl"></i>
+            </button>
+
+            <div class="text-right">
+                <div class="text-xs text-gray-400 uppercase tracking-widest">Balance</div>
+                <div class="text-xl font-bold text-green-400 font-mono">$<span id="balance">100.00</span></div>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-600">
+                <i class="fas fa-user text-gray-400"></i>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow flex flex-col items-center justify-center py-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
+        
+        <div class="mb-6 w-full max-w-md px-4 relative z-20">
+             <label class="text-xs text-gray-500 uppercase tracking-widest mb-1 block">Select Case</label>
+             <div class="relative">
+                <select id="caseSelector" onchange="loadCase(this.value)" class="w-full bg-[#252525] border border-gray-700 text-white py-3 px-4 rounded appearance-none focus:outline-none focus:border-yellow-500 font-rajdhani font-bold uppercase">
+                    <option>Loading Cases...</option>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
+                    <i class="fas fa-chevron-down text-xs"></i>
+                </div>
+             </div>
+        </div>
+
+        <div class="mb-4 text-center">
+            <h2 id="caseNameDisplay" class="text-3xl font-bold text-white font-rajdhani tracking-wide">LOADING...</h2>
+            <div class="text-sm text-yellow-500 uppercase tracking-widest">Contains <span id="caseItemCount">0</span> Skins</div>
+            <div id="fileInstructions" class="text-xs text-gray-600 mt-2 hidden">Using fallback data. To use your files, place <code>crates.json</code> and <code>skins.json</code> in the same folder.</div>
+        </div>
+
+        <div id="spinnerContainer" class="w-full max-w-7xl mx-auto flex flex-col gap-2">
+            <div id="case-window-0" class="case-window shadow-2xl relative" style="height: 220px;">
+                <div class="center-line"></div>
+                <div class="reel" id="reel-0" style="height: 100%;">
+                    </div>
+                <div class="absolute inset-0 pointer-events-none bg-gradient-to-b from-white/5 to-transparent opacity-50 z-10"></div>
+            </div>
+        </div>
+
+        <div class="mt-8 flex flex-col items-center gap-4">
+            
+            <div class="flex gap-4 items-center justify-center">
+                <div class="relative w-28">
+                    <label for="caseQuantity" class="text-xs text-gray-500 uppercase tracking-widest mb-1 block">Quantity</label>
+                    <select id="caseQuantity" onchange="updateCostDisplay()" class="w-full bg-[#252525] border border-gray-700 text-white py-2 px-3 rounded appearance-none focus:outline-none focus:border-yellow-500 font-rajdhani font-bold uppercase">
+                        <option value="1">1 Case</option>
+                        <option value="2">2 Cases</option>
+                        <option value="3">3 Cases</option>
+                        <option value="4">4 Cases</option>
+                        <option value="5">5 Cases</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 top-6 flex items-center px-2 text-white">
+                        <i class="fas fa-chevron-down text-xs"></i>
+                    </div>
+                </div>
+
+                <button id="spinBtn" onclick="startSpin()" disabled class="btn-action bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-black font-bold text-xl px-8 py-4 shadow-[0_0_20px_rgba(34,197,94,0.4)] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:filter disabled:grayscale">
+                    OPEN <span id="casesCount">CASE</span> <span class="text-sm bg-black/20 px-2 py-1 rounded ml-2" id="costDisplay">$2.50</span>
+                </button>
+            </div>
+            
+            <div class="w-full max-w-sm mt-2">
+                <label for="speedSlider" class="text-xs text-gray-500 uppercase tracking-widest flex justify-between">
+                    <span>Spin Duration</span>
+                    <span id="speedValue">6.0s</span>
+                </label>
+                <input type="range" id="speedSlider" min="2" max="10" value="6" step="0.5" oninput="updateSpeed(this.value)" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-lg accent-yellow-500">
+            </div>
+
+            <div class="text-gray-500 text-sm font-mono h-5" id="status">Select a case to begin</div>
+        </div>
+
+    </main>
+
+    <section class="bg-[#151515] border-t border-gray-800 p-8">
+        <div class="max-w-7xl mx-auto">
+            <div class="flex justify-between items-end mb-6">
+                <h3 class="text-xl font-bold font-rajdhani flex items-center gap-2">
+                    <i class="fas fa-th"></i> INVENTORY <span id="itemCount" class="text-gray-500 text-sm">(0)</span>
+                </h3>
+                <div class="text-lg font-bold text-green-400 font-mono">Value: $<span id="inventoryValue">0.00</span></div>
+                
+                <button onclick="sellAll()" class="text-xs text-red-400 hover:text-red-300 uppercase font-bold tracking-wider">Sell All</button>
+            </div>
+            
+            <div class="max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
+                <div id="inventory" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 pb-4">
+                    <div class="col-span-full text-center text-gray-600 py-10 text-sm italic">
+                        Your inventory is empty. Open some cases!
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div id="winModal" class="fixed inset-0 bg-black/95 z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-500 backdrop-blur-md">
+        <div class="text-center transform scale-90 transition-transform duration-500 max-w-lg w-full px-4" id="modalContent">
+            </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const CARD_WIDTH = 188; // 180px width + 4px left margin + 4px right margin
+        const VISIBLE_CARDS = 5; 
+        const TOTAL_CARDS = 70; 
+        const WINNER_INDEX = 55; // The card index that should land near the center
+        const CASE_COST = 2.50; 
+        const STORAGE_KEY = 'cs2sim_state';
+        
+        // --- State ---
+        let TRANSITION_DURATION = 6; // Default spin duration
+        let balance = 100.00;
+        let isSpinning = false;
+        let isSoundOn = true;
+        let inventory = [];
+        let casesOpened = 0; // Cases Opened Counter
+        let currentCaseContents = [];
+        let allCases = [];
+        let allSkins = [];
+        let audioPool = []; 
+
+        // --- FALLBACK DATA (The Kilowatt Case) ---
+        const FALLBACK_CRATES = [
+            { "id": "crate-4904", "name": "Kilowatt Case", "type": "Case" }
+        ];
+
+        const FALLBACK_SKINS = [
+             { "id": "skin-inheritance", "name": "AK-47 | Inheritance", "rarity": { "name": "Covert", "color": "#eb4b4b" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_ak_47_inheritance.png", "min_float": 0.00, "max_float": 0.50, "price": 120.00 },
+             { "id": "skin-chrome-cannon", "name": "AWP | Chrome Cannon", "rarity": { "name": "Covert", "color": "#eb4b4b" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_awp_chrome_cannon.png", "min_float": 0.00, "max_float": 0.50, "price": 95.00 },
+             { "id": "skin-black-lotus", "name": "M4A1-S | Black Lotus", "rarity": { "name": "Classified", "color": "#d32ce6" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_m4a1_s_black_lotus.png", "min_float": 0.06, "max_float": 0.80, "price": 18.00 },
+             { "id": "skin-jawbreaker", "name": "USP-S | Jawbreaker", "rarity": { "name": "Classified", "color": "#d32ce6" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_usp_s_jawbreaker.png", "min_float": 0.00, "max_float": 0.40, "price": 10.50 },
+             { "id": "skin-olympus", "name": "Zeus x27 | Olympus", "rarity": { "name": "Classified", "color": "#d32ce6" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_zeus_x27_olympus.png", "min_float": 0.10, "max_float": 0.90, "price": 7.50 },
+             { "id": "skin-block-18", "name": "Glock-18 | Block-18", "rarity": { "name": "Restricted", "color": "#8847ff" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_glock_18_block_18.png", "min_float": 0.08, "max_float": 0.60, "price": 3.20 },
+             { "id": "skin-etch-lord", "name": "M4A4 | Etch Lord", "rarity": { "name": "Restricted", "color": "#8847ff" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_m4a4_etch_lord.png", "min_float": 0.00, "max_float": 1.00, "price": 4.10 },
+             { "id": "skin-hybrid", "name": "Five-SeveN | Hybrid", "rarity": { "name": "Restricted", "color": "#8847ff" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_five_seven_hybrid.png", "min_float": 0.15, "max_float": 0.70, "price": 2.50 },
+             { "id": "skin-hideout", "name": "Dual Berettas | Hideout", "rarity": { "name": "Mil-Spec Grade", "color": "#4b69ff" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_dual_berettas_hideout.png", "min_float": 0.06, "max_float": 0.60, "price": 0.50 },
+             { "id": "skin-light-box", "name": "MAC-10 | Light Box", "rarity": { "name": "Mil-Spec Grade", "color": "#4b69ff" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_mac_10_light_box.png", "min_float": 0.00, "max_float": 0.30, "price": 0.35 },
+             { "id": "skin-kukri", "name": "★ Kukri Knife | Fade", "rarity": { "name": "Extraordinary", "color": "#ffd700" }, "crates": [{"id":"crate-4904"}], "image": "https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/images/skin_kukri_knife_fade.png", "min_float": 0.00, "max_float": 0.08, "price": 800.00 }
+        ];
+
+        // --- Core Utility Functions (Float, Wear, Price) ---
+
+        function getRandomFloat(min, max) {
+            const trueMin = Math.max(0.00, min);
+            const trueMax = Math.min(1.00, max);
+            return Math.random() * (trueMax - trueMin) + trueMin;
+        }
+
+        function getWearName(float_value) {
+            if (float_value >= 0.000 && float_value <= 0.070) return "Factory New";
+            if (float_value > 0.070 && float_value <= 0.150) return "Minimal Wear";
+            if (float_value > 0.150 && float_value <= 0.380) return "Field-Tested";
+            if (float_value > 0.380 && float_value <= 0.450) return "Well-Worn";
+            if (float_value > 0.450 && float_value <= 1.000) return "Battle-Scarred";
+            return "Unknown Wear";
+        }
+
+        function processNewSkin(skin) {
+            const min = skin.min_float !== undefined ? skin.min_float : 0.06;
+            const max = skin.max_float !== undefined ? skin.max_float : 0.80;
+
+            const float_value = getRandomFloat(min, max);
+            const wear_name = getWearName(float_value);
+
+            // Play the drop sound
+            const dropSfx = document.getElementById('sfx-drop');
+            if (dropSfx && isSoundOn) {
+                dropSfx.currentTime = 0;
+                dropSfx.play().catch(e => {});
+            }
+
+            return {
+                ...skin,
+                float_value: float_value,
+                wear_name: wear_name,
+                price: skin.price || estimatePrice(skin.rarity ? skin.rarity.name : ""), 
+            };
+        }
+
+        function estimatePrice(rarity) {
+            if(!rarity) return 0.05;
+            if(rarity.includes("Consumer")) return (Math.random() * 0.10 + 0.03);
+            if(rarity.includes("Industrial")) return (Math.random() * 0.20 + 0.05);
+            if(rarity.includes("Mil-Spec")) return (Math.random() * 0.5 + 0.10);
+            if(rarity.includes("Restricted")) return (Math.random() * 5 + 1.00);
+            if(rarity.includes("Classified")) return (Math.random() * 20 + 5.00);
+            if(rarity.includes("Covert")) return (Math.random() * 100 + 30.00);
+            if(rarity.includes("Extraordinary") || rarity.includes("Contraband")) return (Math.random() * 500 + 150.00);
+            return 0.05;
+        }
+
+        // --- Persistence Functions ---
+
+        function saveState() {
+            const state = {
+                balance: balance,
+                inventory: inventory,
+                casesOpened: casesOpened 
+            };
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            } catch(e) {
+                console.error("Could not save state to local storage:", e);
+            }
+        }
+
+        function loadState() {
+            try {
+                const savedState = localStorage.getItem(STORAGE_KEY);
+                if (savedState) {
+                    const state = JSON.parse(savedState);
+                    balance = state.balance || 100.00;
+                    inventory = state.inventory || [];
+                    casesOpened = state.casesOpened || 0;
+                    
+                    updateBalance(0); 
+                    renderInventory(); 
+                    renderCasesOpened(); 
+                    document.getElementById('status').innerText = "State loaded. Ready to open.";
+                    return true;
+                }
+            } catch(e) {
+                console.warn("Could not load state from local storage. Starting fresh.", e);
+            }
+            return false;
+        }
+
+        // --- Data Loading ---
+
+        async function initData() {
+            initAudioPool();
+            
+            try {
+                document.getElementById('status').innerText = "Loading local JSON files...";
+                
+                const cratesResp = await fetch('./crates.json');
+                if (!cratesResp.ok) throw new Error("crates.json not found");
+                const cratesData = await cratesResp.json();
+                
+                const skinsResp = await fetch('./skins.json');
+                if (!skinsResp.ok) throw new Error("skins.json not found");
+                const skinsData = await skinsResp.json();
+
+                allCases = cratesData.filter(c => c.name.includes("Case") || c.type === "Case").reverse();
+                allSkins = skinsData;
+                
+                document.getElementById('connectionStatus').innerText = "FILES LOADED";
+                document.getElementById('connectionStatus').classList.replace('text-gray-500', 'text-green-500');
+
+            } catch (e) {
+                console.warn("Local fetch failed (expected in preview), using fallback data.", e);
+                document.getElementById('connectionStatus').innerText = "FALLBACK DATA";
+                document.getElementById('connectionStatus').classList.replace('text-gray-500', 'text-yellow-500');
+                document.getElementById('fileInstructions').classList.remove('hidden');
+                
+                allCases = FALLBACK_CRATES;
+                allSkins = FALLBACK_SKINS;
+            }
+            
+            populateDropdown();
+            if(allCases.length > 0) {
+                loadCase(allCases[0].id);
+            }
+            updateCostDisplay();
+            updateSpeed(TRANSITION_DURATION); 
+            
+            loadState();
+        }
+
+        function populateDropdown() {
+            const selector = document.getElementById('caseSelector');
+            selector.innerHTML = '';
+            
+            allCases.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.id;
+                option.text = c.name;
+                selector.appendChild(option);
+            });
+        }
+
+        async function loadCase(caseId) {
+            const c = allCases.find(x => x.id === caseId);
+            if(!c) return;
+
+            document.getElementById('caseNameDisplay').innerText = c.name.toUpperCase();
+            document.getElementById('status').innerText = "Processing contents...";
+            document.getElementById('spinBtn').disabled = true;
+            
+            currentCaseContents = allSkins.filter(skin => {
+                if(!skin.crates) return false;
+                return skin.crates.some(crateRef => crateRef.id === caseId);
+            }).map(skin => {
+                return {
+                    name: skin.name,
+                    image: skin.image,
+                    rarity: skin.rarity ? skin.rarity.name : "Mil-Spec Grade",
+                    color: skin.rarity ? skin.rarity.color : "#4b69ff",
+                    price: skin.price || estimatePrice(skin.rarity ? skin.rarity.name : ""), 
+                    min_float: skin.min_float, 
+                    max_float: skin.max_float 
+                };
+            });
+
+            if(currentCaseContents.length === 0) {
+                 document.getElementById('status').innerText = "Case empty or not linked correctly.";
+                 document.getElementById('caseItemCount').innerText = "0";
+                 return;
+            }
+
+            document.getElementById('caseItemCount').innerText = currentCaseContents.length;
+            document.getElementById('spinBtn').disabled = false;
+            document.getElementById('status').innerText = "Ready to open";
+            generatePreviewReel(); 
+        }
+
+        // --- Game Logic ---
+
+        function getWeightedRandomItem() {
+            const r = Math.random();
+            let rarityPicked = "Mil-Spec Grade";
+            
+            // Valve Odds
+            if (r > 0.9974) rarityPicked = "Extraordinary";
+            else if (r > 0.991) rarityPicked = "Covert";
+            else if (r > 0.959) rarityPicked = "Classified";
+            else if (r > 0.7992) rarityPicked = "Restricted";
+            
+            const pool = currentCaseContents.filter(i => i.rarity.includes(rarityPicked) || (rarityPicked === "Extraordinary" && i.rarity.includes("Extraordinary")));
+            
+            if(pool.length === 0) return currentCaseContents[Math.floor(Math.random() * currentCaseContents.length)];
+            
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        function createCardHTML(item) {
+            return `
+                <div class="weapon-card" style="border-color: ${item.color}; background: linear-gradient(135deg, #252525, ${item.color}10);">
+                    <div class="flex-grow flex items-center justify-center w-full overflow-hidden">
+                        <img src="${item.image}" alt="${item.name}" onerror="this.onerror=null;this.src='https://placehold.co/200x150/222/FFF?text=CS2'">
+                    </div>
+                    <div class="w-full bg-black/60 py-1 px-1 text-center mt-2">
+                        <div class="text-[10px] font-bold uppercase truncate" style="color: ${item.color}">${item.rarity.replace(' Grade','')}</div>
+                        <div class="text-[11px] font-bold text-white truncate">${item.name}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function createReelElement(index, casesToOpen) {
+            const windowHeight = casesToOpen === 1 ? '220px' : '180px';
+            const reelHeight = casesToOpen === 1 ? '100%' : '160px'; 
+
+            return `
+                <div id="case-window-${index}" class="case-window shadow-2xl relative" style="height:${windowHeight}">
+                    <div class="center-line"></div>
+                    <div class="reel" id="reel-${index}" style="height:${reelHeight}">
+                        </div>
+                    <div class="absolute inset-0 pointer-events-none bg-gradient-to-b from-white/5 to-transparent opacity-50 z-10"></div>
+                </div>
+            `;
+        }
+
+        function generateReelHTML(winner) {
+            let html = '';
+            for (let i = 0; i < TOTAL_CARDS; i++) {
+                let item = (i === WINNER_INDEX) ? winner : getWeightedRandomItem();
+                html += createCardHTML(item);
+            }
+            return html;
+        }
+
+        function generatePreviewReel() {
+            const container = document.getElementById('spinnerContainer');
+            // Check if the single reel is already there, if not, create it
+            if (!document.getElementById('case-window-0')) {
+                 container.innerHTML = createReelElement(0, 1); 
+            }
+            
+
+            const reel = document.getElementById('reel-0');
+            if (!reel) return; 
+
+            reel.style.transition = 'none';
+            reel.style.transform = 'translateX(0px)';
+            let html = '';
+             
+            if (currentCaseContents.length === 0) {
+                 reel.innerHTML = '<div class="text-gray-500 text-xs w-full text-center">No items loaded</div>';
+                 return;
+            }
+
+            for(let i=0; i<20; i++) {
+                 html += createCardHTML(currentCaseContents[i % currentCaseContents.length]);
+            }
+            reel.innerHTML = html;
+        }
+
+        function updateCostDisplay() {
+            const quantity = parseInt(document.getElementById('caseQuantity').value);
+            const totalCost = CASE_COST * quantity;
+            document.getElementById('costDisplay').innerText = `$${totalCost.toFixed(2)}`;
+            document.getElementById('casesCount').innerText = quantity > 1 ? 'CASES' : 'CASE';
+            
+            // When switching back to 1 case, show the single reel preview
+            if (quantity === 1) {
+                 generatePreviewReel();
+            } else {
+                // Clear the reel container for batch mode
+                document.getElementById('spinnerContainer').innerHTML = ''; 
+                document.getElementById('status').innerText = "Ready to open";
+            }
+        }
+
+        function updateSpeed(newDuration) {
+            TRANSITION_DURATION = parseFloat(newDuration);
+            document.getElementById('speedValue').innerText = `${TRANSITION_DURATION.toFixed(1)}s`;
+        }
+        
+        function renderCasesOpened() {
+            document.getElementById('casesOpenedCount').innerText = casesOpened.toLocaleString();
+        }
+
+        function startSpin() {
+            if (isSpinning) return;
+            
+            const caseQuantitySelect = document.getElementById('caseQuantity');
+            const casesToOpen = parseInt(caseQuantitySelect.value);
+            const totalCost = CASE_COST * casesToOpen;
+
+            if (balance < totalCost) {
+                alert(`Not enough money! You need $${totalCost.toFixed(2)} to open ${casesToOpen} cases.`);
+                return;
+            }
+
+            updateBalance(-totalCost);
+            
+            casesOpened += casesToOpen;
+            renderCasesOpened();
+            saveState();
+
+            playSound('start');
+            isSpinning = true;
+            document.getElementById('spinBtn').disabled = true;
+            document.getElementById('caseSelector').disabled = true;
+            caseQuantitySelect.disabled = true;
+            document.getElementById('speedSlider').disabled = true;
+            document.getElementById('status').innerText = `Rolling ${casesToOpen} cases...`;
+
+            document.getElementById('spinnerContainer').innerHTML = ''; 
+            
+            runCaseSpins(casesToOpen, totalCost);
+        }
+
+        function runCaseSpins(casesToOpen, totalCost) {
+            const container = document.getElementById('spinnerContainer');
+            const winningSkins = []; 
+            
+            let reelHTML = '';
+            for (let i = 0; i < casesToOpen; i++) {
+                const winner = getWeightedRandomItem();
+                winningSkins.push(winner);
+                reelHTML += createReelElement(i, casesToOpen);
+            }
+            container.innerHTML = reelHTML;
+
+            const tensionSfx = document.getElementById('sfx-tension');
+            if (tensionSfx && isSoundOn) {
+                tensionSfx.currentTime = 0;
+                tensionSfx.loop = true; 
+                tensionSfx.volume = 0.5; 
+                tensionSfx.play().catch(e => console.log('Tension sound autoplay blocked:', e));
+            }
+
+            let completedSpins = 0;
+            let finalItems = [];
+            let highestValueItem = null;
+            let totalProfit = -totalCost;
+            
+            // Jitter calculation constants (FIX FOR BUG)
+            const JITTER_BUFFER = 10; // ensures the line lands at least 10px from either edge of the winning card
+            const jitterRange = CARD_WIDTH - (2 * JITTER_BUFFER); 
+
+            for (let i = 0; i < casesToOpen; i++) {
+                const rawWinner = winningSkins[i];
+                
+                const reelElement = document.getElementById(`reel-${i}`);
+                const caseWindowElement = document.getElementById(`case-window-${i}`);
+                
+                reelElement.innerHTML = generateReelHTML(rawWinner);
+
+                const currentDuration = casesToOpen === 1 
+                    ? TRANSITION_DURATION 
+                    : TRANSITION_DURATION + (i * 0.5) + (Math.random() * 0.5); 
+                
+                const centerOffset = caseWindowElement.offsetWidth / 2;
+                
+                // NEW: Landing position calculation fix
+                const randomJitter = (Math.random() * jitterRange) + JITTER_BUFFER; 
+                // landingPosition is the total distance from the start of the reel to the desired landing spot under the center line.
+                // Left edge of winning card (WINNER_INDEX * CARD_WIDTH) + random point inside card (randomJitter) - offset to center the reel wrapper (centerOffset)
+                const landingPosition = (WINNER_INDEX * CARD_WIDTH) + randomJitter - centerOffset;
+
+
+                reelElement.style.transition = 'none';
+                reelElement.style.transform = 'translateX(0px)';
+                const _ = reelElement.offsetWidth; 
+
+                reelElement.style.transition = `transform ${currentDuration}s cubic-bezier(0.15, 0, 0.10, 1)`;
+                reelElement.style.transform = `translateX(-${landingPosition}px)`;
+                
+                // Only start sound loop for the first reel in a batch
+                if (i === 0) {
+                     startSoundLoop(reelElement);
+                }
+
+                setTimeout(() => {
+                    const finalItem = processNewSkin(rawWinner);
+                    finalItems.push(finalItem);
+                    totalProfit += finalItem.price;
+                    
+                    if (!highestValueItem || finalItem.price > highestValueItem.price) {
+                        highestValueItem = finalItem;
+                    }
+                    
+                    addToInventory(finalItem);
+                    saveState();
+
+                    const winningCard = reelElement.children[WINNER_INDEX];
+                    if (winningCard) {
+                        // Apply final win effect
+                        winningCard.style.filter = 'brightness(1.5)';
+                        winningCard.style.boxShadow = `0 0 20px 5px ${finalItem.color}80`;
+                    }
+                    
+                    completedSpins++;
+                    
+                    if (completedSpins === casesToOpen) {
+                        
+                        if (tensionSfx) {
+                            tensionSfx.pause();
+                            tensionSfx.currentTime = 0;
+                            tensionSfx.loop = false;
+                        }
+                        
+                        showResultsModal(finalItems, totalProfit, highestValueItem);
+
+                        isSpinning = false;
+                        document.getElementById('spinBtn').disabled = false;
+                        document.getElementById('caseSelector').disabled = false;
+                        document.getElementById('caseQuantity').disabled = false;
+                        document.getElementById('speedSlider').disabled = false;
+                        
+                        playSound('win');
+                    }
+                }, currentDuration * 1000);
+            }
+        }
+        
+        function showResultsModal(items, totalProfit, highestValueItem) {
+            const isSingle = items.length === 1;
+            const item = items[0]; 
+
+            const modal = document.getElementById('winModal');
+            const content = document.getElementById('modalContent');
+            
+            // NEW: Allow closing by clicking backdrop
+            modal.onclick = (event) => {
+                if (event.target === modal) {
+                    closeResultsModal(false, 0); 
+                }
+            };
+
+            let profitColor = totalProfit >= 0 ? 'text-green-400' : 'text-red-400';
+            let profitSign = totalProfit >= 0 ? '+' : '';
+            let profitText = `${totalProfit >= 0 ? 'TOTAL PROFIT' : 'TOTAL LOSS'} ${profitSign}$${Math.abs(totalProfit).toFixed(2)}`;
+
+            let innerHTML;
+
+            if (isSingle) {
+                // --- SINGLE OPEN LAYOUT ---
+                 const singleProfit = item.price - CASE_COST;
+                 let singleProfitText = '';
+                 let singleProfitColor = '';
+
+                if (singleProfit > 0.01) { 
+                    singleProfitText = `PROFIT +$${singleProfit.toFixed(2)}`;
+                    singleProfitColor = 'text-green-400';
+                } else if (singleProfit < -0.01) { 
+                    singleProfitText = `LOSS -$${Math.abs(singleProfit).toFixed(2)}`;
+                    singleProfitColor = 'text-red-400';
+                } else {
+                    singleProfitText = 'BREAK EVEN';
+                    singleProfitColor = 'text-gray-400';
+                }
+
+                innerHTML = `
+                    <div class="text-sm text-gray-400 uppercase tracking-[0.5em] mb-2 animate-pulse">Unboxed</div>
+                    <h2 class="text-3xl md:text-5xl font-black mb-2 font-rajdhani shadow-black drop-shadow-lg leading-tight" style="color:${item.color}">${item.name} (${item.wear_name})</h2>
+                    <div class="text-xl font-bold mb-4 tracking-widest" style="color:${item.color}">${item.rarity.toUpperCase()}</div>
+                    
+                    <div class="text-2xl font-black font-mono mb-8 ${singleProfitColor}">${singleProfitText}</div>
+                    
+                    <div class="relative w-full h-64 mx-auto mb-8 flex items-center justify-center">
+                        <div id="winGlow" class="absolute inset-0 rounded-full blur-3xl opacity-20 animate-pulse" style="background-color:${item.color}"></div>
+                        <img src="${item.image}" class="relative z-10 drop-shadow-2xl max-h-full max-w-full object-contain transform hover:scale-110 transition-transform duration-500">
+                    </div>
+
+                    <div class="flex gap-4 justify-center">
+                        <button onclick="closeResultsModal(false, ${item.price})" class="btn-action bg-gray-700 hover:bg-gray-600 text-white px-8 py-3 w-full">Keep</button>
+                        <button onclick="closeResultsModal(true, ${item.price})" class="btn-action bg-green-600 hover:bg-green-500 text-black font-bold px-8 py-3 w-full flex items-center justify-center gap-2">
+                            Sell <span class="font-mono bg-black/10 px-1 rounded">$${item.price.toFixed(2)}</span>
+                        </button>
+                    </div>
+                `;
+
+            } else {
+                // --- BATCH OPEN LAYOUT ---
+                
+                // Determine which Tailwind grid-cols class to use (max 5 columns for 5 cases)
+                const gridColsClass = `grid-cols-${Math.min(items.length, 5)}`; 
+                const displayItems = items.slice(-5); // Show last 5 opened
+
+                let itemsGridHTML = displayItems.map(i => `
+                    <div class="p-2 rounded flex flex-col items-center justify-center border-b-4" style="border-color: ${i.color}; background: #252525;">
+                        <img src="${i.image}" class="w-16 h-12 object-contain mb-1">
+                        <div class="text-[9px] font-bold uppercase truncate" style="color: ${i.color}">${i.rarity.replace(' Grade','')}</div>
+                        <div class="text-[8px] text-gray-400 truncate">${i.wear_name}</div>
+                        <div class="text-xs font-bold text-white font-mono mt-1">$${i.price.toFixed(2)}</div>
+                    </div>
+                `).join('');
+
+                innerHTML = `
+                    <div class="text-sm text-gray-400 uppercase tracking-[0.5em] mb-4">Batch Open Summary (${items.length} Cases)</div>
+                    
+                    <div class="${profitColor} text-3xl font-black font-mono mb-8">${profitText}</div>
+                    
+                    <div class="grid ${gridColsClass} gap-2 mb-8 mx-auto max-w-lg">
+                        ${itemsGridHTML}
+                    </div>
+                    
+                    <div class="text-lg text-gray-400 uppercase tracking-widest mb-2 border-t border-gray-700 pt-4">Highest Value Item</div>
+                    <div class="flex items-center justify-center gap-4 bg-gray-900/50 p-4 rounded-lg">
+                        <img src="${highestValueItem.image}" class="w-20 h-16 object-contain">
+                        <div>
+                            <div class="text-lg font-bold" style="color:${highestValueItem.color}">${highestValueItem.name}</div>
+                            <div class="text-sm text-gray-300">${highestValueItem.wear_name}</div>
+                            <div class="text-xl font-black text-green-400 font-mono mt-1">$${highestValueItem.price.toFixed(2)}</div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-4 justify-center mt-8">
+                        <button onclick="closeResultsModal(false, 0)" class="btn-action bg-gray-700 hover:bg-gray-600 text-white px-8 py-3 w-full">View Inventory</button>
+                    </div>
+                `;
+            }
+
+            content.innerHTML = innerHTML;
+            modal.style.pointerEvents = 'auto';
+            modal.style.opacity = '1';
+            content.style.transform = 'scale(1)';
+        }
+        
+        function closeResultsModal(shouldSell, price) {
+            const modal = document.getElementById('winModal');
+            
+            modal.style.opacity = '0';
+            modal.style.pointerEvents = 'none';
+            document.getElementById('modalContent').style.transform = 'scale(0.9)';
+            
+            modal.onclick = null; // Remove click listener
+
+            if (shouldSell) {
+                // Single open: Find and sell the item just opened (which is the last one in inventory for single case)
+                const itemToSellIndex = inventory.length - 1;
+                const itemToSell = inventory[itemToSellIndex];
+                if (itemToSell && itemToSell.price === price) { 
+                    updateBalance(itemToSell.price);
+                    removeFromInventory(itemToSellIndex);
+                    saveState();
+                }
+            }
+            
+            generatePreviewReel(); // Reset to single preview reel
+            document.getElementById('status').innerText = "Ready to open";
+        }
+
+
+        // --- Sound System ---
+        
+        function initAudioPool() {
+            const src = document.getElementById('sfx-spin').src;
+            for(let i=0; i<8; i++) {
+                let a = new Audio(src);
+                a.volume = 0.3;
+                audioPool.push(a);
+            }
+        }
+        
+        function toggleSound() {
+            isSoundOn = !isSoundOn;
+            document.querySelector('#soundToggle i').className = isSoundOn ? 'fas fa-volume-up' : 'fas fa-volume-mute';
+        }
+
+        function playSound(type) {
+            if(!isSoundOn) return;
+            const audio = document.getElementById(`sfx-${type}`);
+            if(audio && audio.src) {
+                audio.currentTime = 0;
+                audio.play().catch(e => {}); 
+            }
+        }
+        
+        let currentAudioIndex = 0;
+        function playTick() {
+            if(!isSoundOn) return;
+            const audio = audioPool[currentAudioIndex];
+            audio.currentTime = 0;
+            audio.play().catch(e => {});
+            currentAudioIndex = (currentAudioIndex + 1) % audioPool.length;
+        }
+
+        function startSoundLoop(reelElement) {
+            if(!isSoundOn) return;
+            let lastPos = 0;
+
+            function checkPos() {
+                if(!isSpinning) return;
+
+                const style = window.getComputedStyle(reelElement);
+                // Use a standard approach to get the current transform offset
+                const matrix = new WebKitCSSMatrix(style.transform);
+                const currentPos = Math.abs(matrix.m41);
+
+                if (Math.floor(currentPos / CARD_WIDTH) > Math.floor(lastPos / CARD_WIDTH)) {
+                    playTick();
+                }
+
+                lastPos = currentPos;
+                requestAnimationFrame(checkPos);
+            }
+            
+            requestAnimationFrame(checkPos);
+        }
+
+        // --- Inventory & Balance ---
+
+        function updateBalance(amount) {
+            balance += amount;
+            document.getElementById('balance').innerText = balance.toFixed(2);
+        }
+
+        function addToInventory(item) {
+            inventory.push({...item, uniqueId: Date.now()});
+            renderInventory();
+        }
+
+        function removeFromInventory(index) {
+            inventory.splice(index, 1);
+            renderInventory();
+        }
+
+        function sellAll() {
+            let total = 0;
+            inventory.forEach(item => total += item.price);
+            if (total > 0) {
+                 updateBalance(total);
+                 inventory = [];
+                 renderInventory();
+                 document.getElementById('status').innerText = `Sold all items for $${total.toFixed(2)}`;
+                 saveState();
+            } else {
+                 document.getElementById('status').innerText = `Inventory is empty.`;
+            }
+        }
+
+        function renderInventory() {
+            const container = document.getElementById('inventory');
+            const countDisplay = document.getElementById('itemCount');
+            const valueDisplay = document.getElementById('inventoryValue'); 
+
+            countDisplay.innerText = `(${inventory.length})`;
+
+            let totalValue = 0;
+            inventory.forEach(item => {
+                totalValue += item.price;
+            });
+            valueDisplay.innerText = totalValue.toFixed(2); 
+            
+            if (inventory.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full text-center text-gray-600 py-10 text-sm italic">
+                        Your inventory is empty. Open some cases!
+                    </div>`;
+                return;
+            }
+
+            let html = '';
+            for(let i = inventory.length - 1; i >= 0; i--) {
+                const item = inventory[i];
+                const wearName = item.wear_name ? item.wear_name : 'N/A';
+                const floatValue = item.float_value ? item.float_value.toFixed(4) : 'N/A';
+
+                html += `
+                <div class="inv-item p-2 rounded border border-gray-700/50 flex flex-col items-center relative group">
+                    <div class="w-full aspect-[4/3] flex items-center justify-center mb-1 bg-black/20 rounded overflow-hidden">
+                        <img src="${item.image}" class="w-full h-full object-contain" 
+                             onerror="this.onerror=null;this.src='https://placehold.co/100x100/1a1a1a/FFFFFF?text=Item'">
+                    </div>
+                    
+                    <div class="text-[9px] font-bold uppercase w-full truncate" style="color:${item.color}">${item.rarity.replace(' Grade','')}</div>
+                    
+                    <div class="text-[9px] font-bold uppercase w-full truncate text-gray-200">${wearName}</div>
+
+                    <div class="text-[10px] font-bold text-gray-200 w-full truncate mb-1">${item.name}</div>
+                    
+                    <div class="text-[8px] text-gray-400 w-full truncate">Float: ${floatValue}</div>
+                    
+                    <button onclick="sellItem(${i})" class="w-full mt-2 bg-red-900/40 hover:bg-red-600 text-red-200 hover:text-white border border-red-900/50 hover:border-red-500 text-[10px] font-bold py-1 px-2 rounded transition-colors flex items-center justify-center gap-1">
+                        SELL <span>$${item.price.toFixed(2)}</span>
+                    </button>
+                </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function sellItem(index) {
+            const item = inventory[index];
+            updateBalance(item.price);
+            removeFromInventory(index);
+            saveState();
+        }
+
+        // Start
+        initData();
+    </script>
+</body>
+</html>
